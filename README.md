@@ -1,2 +1,2 @@
-# gocurl
-Implementation of curl functionality in GoLang
+### gocurl
+Implementation of curl functionality in GoLang.
