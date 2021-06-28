@@ -1,0 +1,300 @@
+package main
+
+import (
+	"bytes"
+	"crypto/tls"
+	"flag"
+	"fmt"
+	"io"
+	"io/ioutil"
+	"log"
+	"mime/multipart"
+	"net/http"
+	"net/http/httputil"
+	"os"
+	"os/user"
+	"strings"
+	"time"
+
+	"github.com/vkuznet/x509proxy"
+)
+
+type strFlags []string
+
+func (i *strFlags) String() string {
+	return "string flag"
+}
+
+func (i *strFlags) Set(value string) error {
+	*i = append(*i, value)
+	return nil
+}
+
+// Request represents our http request
+type Request struct {
+	Url     string            // request url
+	Method  string            // http method
+	Data    string            // request data, e.g. json payload
+	Headers map[string]string // request headers
+	Forms   map[string]string // request forms
+	Output  string            // output file name
+	Key     string            // x509 key or proxy file name
+	Cert    string            // x509 cert or proxy file name
+	Timeout int               // http client timeout
+	Verbose int               // verbosity level
+}
+
+func main() {
+	var verbose int
+	flag.IntVar(&verbose, "verbose", 0, "verbosity level")
+	var data string
+	flag.StringVar(&data, "data", "", "input data or data file")
+	var header strFlags
+	flag.Var(&header, "header", "HTTP header, e.g. Content-Type:applicatin/json")
+	var form strFlags
+	flag.Var(&form, "form", "HTTP form key-value pair, e.g. key=value")
+	var rurl string
+	flag.StringVar(&rurl, "url", "", "input url")
+	var method string
+	flag.StringVar(&method, "method", "GET", "HTTP method")
+	var key string
+	flag.StringVar(&key, "key", "", "X509 key file name")
+	var cert string
+	flag.StringVar(&cert, "cert", "", "X509 cert file name")
+	var fout string
+	flag.StringVar(&fout, "out", "", "output file name")
+	var timeout int
+	flag.IntVar(&timeout, "timeout", 0, "HTTP timeout value")
+	flag.Parse()
+
+	// set logger flags
+	log.SetFlags(0)
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	if rurl == "" {
+		log.Fatal("no input url")
+	}
+
+	// parse input header field
+	hmap := make(map[string]string)
+	for _, h := range header {
+		h := strings.Trim(h, " ")
+		arr := strings.Split(h, ":")
+		if len(arr) != 2 {
+			log.Fatal("fail to parse input HTTP header")
+		}
+		hmap[strings.Trim(arr[0], " ")] = strings.Trim(arr[1], " ")
+	}
+	if verbose > 0 {
+		log.Println("HTTP headers")
+		for k, v := range hmap {
+			log.Println(k, v)
+		}
+	}
+
+	// parse form pairs
+	fmap := make(map[string]string)
+	for _, f := range form {
+		arr := strings.Split(f, "=")
+		if len(arr) != 2 {
+			log.Fatal("fail to parse input form")
+		}
+		fmap[arr[0]] = arr[1]
+	}
+	if verbose > 0 {
+		log.Println("HTTP form pairs")
+		for k, v := range hmap {
+			log.Println(k, v)
+		}
+	}
+
+	// run actual request workflow
+	req := Request{
+		Url:     rurl,
+		Method:  method,
+		Data:    data,
+		Headers: hmap,
+		Forms:   fmap,
+		Key:     key,
+		Cert:    cert,
+		Timeout: timeout,
+		Verbose: verbose,
+	}
+	run(req)
+}
+
+// helper function to read given file or return data
+func read(r string) string {
+	if r == "" {
+		return r
+	}
+	if strings.HasPrefix(r, "@") {
+		fname := r[1:len(r)]
+		if _, err := os.Stat(fname); err == nil {
+			b, e := ioutil.ReadFile(fname)
+			if e != nil {
+				log.Fatalf("Unable to read data from file: %s, error: %s", r, e)
+			}
+			return string(b)
+		}
+	}
+	return r
+}
+
+// client X509 certificates
+func tlsCerts(key, cert string) ([]tls.Certificate, error) {
+	uproxy := os.Getenv("X509_USER_PROXY")
+	uckey := os.Getenv("X509_USER_KEY")
+	ucert := os.Getenv("X509_USER_CERT")
+	if key != "" {
+		uckey = key
+	}
+	if cert != "" {
+		ucert = cert
+	}
+
+	// check if /tmp/x509up_u$UID exists, if so setup X509_USER_PROXY env
+	u, err := user.Current()
+	if err == nil {
+		fname := fmt.Sprintf("/tmp/x509up_u%s", u.Uid)
+		if _, err := os.Stat(fname); err == nil {
+			uproxy = fname
+		}
+	}
+
+	if uproxy == "" && uckey == "" { // user doesn't have neither proxy or user certs
+		return nil, nil
+	}
+	if uproxy != "" {
+		// use local implementation of LoadX409KeyPair instead of tls one
+		x509cert, err := x509proxy.LoadX509Proxy(uproxy)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse X509 proxy: %v", err)
+		}
+		certs := []tls.Certificate{x509cert}
+		return certs, nil
+	}
+	x509cert, err := tls.LoadX509KeyPair(ucert, uckey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse user X509 certificate: %v", err)
+	}
+	certs := []tls.Certificate{x509cert}
+	return certs, nil
+}
+
+// HttpClient is HTTP client for urlfetch server
+func HttpClient(key, cert string, tout int) *http.Client {
+	var certs []tls.Certificate
+	var err error
+	// get X509 certs
+	certs, err = tlsCerts(key, cert)
+	if err != nil {
+		log.Fatal("ERROR ", err.Error())
+	}
+	timeout := time.Duration(tout) * time.Second
+	if len(certs) == 0 {
+		if tout > 0 {
+			return &http.Client{Timeout: time.Duration(timeout)}
+		}
+		return &http.Client{}
+	}
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{Certificates: certs,
+			InsecureSkipVerify: true},
+	}
+	if tout > 0 {
+		return &http.Client{Transport: tr, Timeout: timeout}
+	}
+	return &http.Client{Transport: tr}
+}
+
+// func run(rurl, params string, headers, fmap map[string]string, fout string, tout, verbose int) {
+func run(r Request) {
+	client := HttpClient(r.Key, r.Cert, r.Timeout)
+	var req *http.Request
+	if r.Method == "POST" {
+		if len(r.Data) > 0 {
+			args := read(r.Data)
+			jsonStr := []byte(args)
+			req, _ = http.NewRequest("POST", r.Url, bytes.NewBuffer(jsonStr))
+			//         req.Header.Set("Content-Type", "application/json")
+		} else if len(r.Forms) > 0 {
+			// create multipart writer
+			body := &bytes.Buffer{}
+			writer := multipart.NewWriter(body)
+			for key, val := range r.Forms {
+				if strings.HasPrefix(key, "@") {
+					// if our key is a file name, we'll read and send it over
+					fname := key[1:len(key)]
+					fw, err := writer.CreateFormFile(key, fname)
+					if err != nil {
+						log.Fatal(err)
+					}
+					file, err := os.Open(fname)
+					if err != nil {
+						log.Fatal(err)
+					}
+					_, err = io.Copy(fw, file)
+					if err != nil {
+						log.Fatal(err)
+					}
+				} else {
+					// otherwise we'll use a form key-value pair
+					fw, err := writer.CreateFormField(key)
+					if err != nil {
+						log.Fatal(err)
+					}
+					_, err = io.Copy(fw, strings.NewReader(val))
+					if err != nil {
+						log.Fatal(err)
+					}
+				}
+			}
+			writer.Close()
+
+			req, _ = http.NewRequest("POST", r.Url, bytes.NewReader(body.Bytes()))
+			req.Header.Set("Content-Type", writer.FormDataContentType())
+		}
+	} else if r.Method == "GET" {
+		req, _ = http.NewRequest("GET", r.Url, nil)
+	} else if r.Method == "PUT" {
+		if len(r.Data) > 0 {
+			args := read(r.Data)
+			jsonStr := []byte(args)
+			req, _ = http.NewRequest("PUT", r.Url, bytes.NewBuffer(jsonStr))
+		}
+	} else if r.Method == "DELETE" {
+		req, _ = http.NewRequest("DELETE", r.Url, nil)
+	} else {
+		log.Fatal("Not implemented yet")
+	}
+	for key, val := range r.Headers {
+		req.Header.Add(key, val)
+	}
+	if r.Verbose > 1 {
+		dump, err := httputil.DumpRequestOut(req, true)
+		log.Printf("http request %+v, url %v, dump %v, error %v\n", req, r.Url, string(dump), err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if r.Verbose > 1 {
+		if resp != nil {
+			dump, err := httputil.DumpResponse(resp, true)
+			log.Printf("http response url %v, dump %v, error %v\n", r.Url, string(dump), err)
+		}
+	}
+	data, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if r.Output != "" {
+		err := ioutil.WriteFile(r.Output, data, 0777)
+		if err != nil {
+			log.Fatalf("Unable to write, file: %s, error: %v\n", r.Output, err)
+		}
+	} else {
+		fmt.Println(string(data))
+	}
+}
