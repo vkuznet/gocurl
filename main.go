@@ -47,24 +47,34 @@ type Request struct {
 func main() {
 	var verbose int
 	flag.IntVar(&verbose, "verbose", 0, "verbosity level")
+	flag.IntVar(&verbose, "v", 0, "alias for -verbose option")
 	var data string
 	flag.StringVar(&data, "data", "", "input data or data file")
+	flag.StringVar(&data, "d", "", "alias for -data option")
 	var header strFlags
 	flag.Var(&header, "header", "HTTP header, e.g. Content-Type:applicatin/json")
+	flag.Var(&header, "h", "alias for -header option")
 	var form strFlags
 	flag.Var(&form, "form", "HTTP form key-value pair, e.g. key=value")
+	flag.Var(&form, "f", "alias for -form option")
 	var rurl string
 	flag.StringVar(&rurl, "url", "", "input url")
+	flag.StringVar(&rurl, "u", "", "alias for -url option")
 	var method string
 	flag.StringVar(&method, "method", "GET", "HTTP method")
+	flag.StringVar(&method, "m", "GET", "alias for -method option")
 	var key string
 	flag.StringVar(&key, "key", "", "X509 key file name")
+	flag.StringVar(&key, "k", "", "alias for -key option")
 	var cert string
 	flag.StringVar(&cert, "cert", "", "X509 cert file name")
+	flag.StringVar(&cert, "c", "", "alias for -cert option")
 	var fout string
 	flag.StringVar(&fout, "out", "", "output file name")
+	flag.StringVar(&fout, "o", "", "alias for -out option")
 	var timeout int
 	flag.IntVar(&timeout, "timeout", 0, "HTTP timeout value")
+	flag.IntVar(&timeout, "t", 0, "alias -timeout option")
 	flag.Parse()
 
 	// set logger flags
