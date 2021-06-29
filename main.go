@@ -117,6 +117,7 @@ func main() {
 		Key:     key,
 		Cert:    cert,
 		Timeout: timeout,
+		Output:  fout,
 		Verbose: verbose,
 	}
 	run(req)
