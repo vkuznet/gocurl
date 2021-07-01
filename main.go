@@ -104,7 +104,7 @@ func main() {
 	// parse form pairs
 	fmap := make(map[string]string)
 	for _, f := range form {
-		arr := strings.Split(f, "=")
+		arr := strings.SplitN(f, "=", 2)
 		if len(arr) != 2 {
 			log.Fatal("fail to parse input form")
 		}
