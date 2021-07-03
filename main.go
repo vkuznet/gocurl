@@ -231,12 +231,15 @@ func run(r Request) {
 		} else if len(r.Forms) > 0 {
 			// create multipart writer
 			body := &bytes.Buffer{}
+			var nbytes int64
 			writer := multipart.NewWriter(body)
 			for key, val := range r.Forms {
-				if strings.HasPrefix(key, "@") {
+				if strings.HasPrefix(val, "@") {
 					// if our key is a file name, we'll read and send it over
-					fname := key[1:len(key)]
-					fw, err := writer.CreateFormFile(key, fname)
+					fname := val[1:len(val)]
+					arr := strings.Split(fname, "/")
+					oname := arr[len(arr)-1]
+					fw, err := writer.CreateFormFile(key, oname)
 					if err != nil {
 						log.Fatal(err)
 					}
@@ -244,9 +247,12 @@ func run(r Request) {
 					if err != nil {
 						log.Fatal(err)
 					}
-					_, err = io.Copy(fw, file)
+					nbytes, err = io.Copy(fw, file)
 					if err != nil {
 						log.Fatal(err)
+					}
+					if r.Verbose > 2 {
+						log.Printf("read %d bytes from %s", nbytes, fname)
 					}
 				} else {
 					// otherwise we'll use a form key-value pair
@@ -254,9 +260,12 @@ func run(r Request) {
 					if err != nil {
 						log.Fatal(err)
 					}
-					_, err = io.Copy(fw, strings.NewReader(val))
+					nbytes, err = io.Copy(fw, strings.NewReader(val))
 					if err != nil {
 						log.Fatal(err)
+					}
+					if r.Verbose > 2 {
+						log.Printf("read %d bytes from %s=%s", nbytes, key, val)
 					}
 				}
 			}
