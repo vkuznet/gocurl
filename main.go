@@ -233,7 +233,20 @@ func run(r Request) {
 			body := &bytes.Buffer{}
 			var nbytes int64
 			writer := multipart.NewWriter(body)
-			for key, val := range r.Forms {
+			// get keys of form map and place "file" key to be last
+			var keys []string
+			for k, _ := range r.Forms {
+				if k == "file" {
+					continue
+				}
+				keys = append(keys, k)
+			}
+			if _, ok := r.Forms["file"]; ok {
+				keys = append(keys, "file")
+			}
+			//             for key, val := range r.Forms {
+			for _, key := range keys {
+				val, _ := r.Forms[key]
 				if strings.HasPrefix(val, "@") {
 					// if our key is a file name, we'll read and send it over
 					fname := val[1:len(val)]
