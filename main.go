@@ -112,7 +112,7 @@ func main() {
 	}
 	if verbose > 0 {
 		log.Println("HTTP form pairs")
-		for k, v := range hmap {
+		for k, v := range fmap {
 			log.Println(k, v)
 		}
 	}
