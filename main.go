@@ -14,6 +14,7 @@ import (
 	"net/http/httputil"
 	"os"
 	"os/user"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -41,7 +42,7 @@ type Request struct {
 	Output  string            // output file name
 	Key     string            // x509 key or proxy file name
 	Cert    string            // x509 cert or proxy file name
-	RootCA  string            // root CA file name
+	CAPath  string            // CA path name
 	Timeout int               // http client timeout
 	Verbose int               // verbosity level
 }
@@ -71,8 +72,8 @@ func main() {
 	var cert string
 	flag.StringVar(&cert, "cert", "", "X509 cert file name")
 	flag.StringVar(&cert, "c", "", "alias for -cert option")
-	var rootCA string
-	flag.StringVar(&rootCA, "rootCA", "", "rootCA file name")
+	var caPath string
+	flag.StringVar(&caPath, "capath", "", "CA path")
 	var fout string
 	flag.StringVar(&fout, "out", "", "output file name")
 	flag.StringVar(&fout, "o", "", "alias for -out option")
@@ -130,7 +131,7 @@ func main() {
 		Forms:   fmap,
 		Key:     key,
 		Cert:    cert,
-		RootCA:  rootCA,
+		CAPath:  caPath,
 		Timeout: timeout,
 		Output:  fout,
 		Verbose: verbose,
@@ -198,7 +199,7 @@ func tlsCerts(key, cert string) ([]tls.Certificate, error) {
 }
 
 // HttpClient is HTTP client for urlfetch server
-func HttpClient(key, cert, rootCA string, tout int) *http.Client {
+func HttpClient(key, cert, caPath string, tout int) *http.Client {
 	var certs []tls.Certificate
 	var err error
 	// get X509 certs
@@ -214,17 +215,26 @@ func HttpClient(key, cert, rootCA string, tout int) *http.Client {
 		return &http.Client{}
 	}
 	var tr *http.Transport
-	if rootCA != "" {
-		caCert, err := ioutil.ReadFile(rootCA)
+	if caPath != "" {
+		rootCAs := x509.NewCertPool()
+		files, err := ioutil.ReadDir(caPath)
 		if err != nil {
-			log.Fatal("ERROR ", err)
+			log.Fatalf("Unable to list files in '%s', error: %v\n", caPath, err)
 		}
-		caCertPool := x509.NewCertPool()
-		caCertPool.AppendCertsFromPEM(caCert)
+		for _, finfo := range files {
+			fname := fmt.Sprintf("%s/%s", caPath, finfo.Name())
+			caCert, err := os.ReadFile(filepath.Clean(fname))
+			if err != nil {
+				log.Printf("Unable to read %s\n", fname)
+			}
+			if ok := rootCAs.AppendCertsFromPEM(caCert); !ok {
+				log.Printf("invalid PEM format while importing trust-chain: %q", fname)
+			}
+		}
 		tr = &http.Transport{
 			TLSClientConfig: &tls.Config{
 				Certificates:       certs,
-				RootCAs:            caCertPool,
+				RootCAs:            rootCAs,
 				InsecureSkipVerify: true},
 		}
 	} else {
@@ -242,7 +252,7 @@ func HttpClient(key, cert, rootCA string, tout int) *http.Client {
 
 // func run(rurl, params string, headers, fmap map[string]string, fout string, tout, verbose int) {
 func run(r Request) {
-	client := HttpClient(r.Key, r.Cert, r.RootCA, r.Timeout)
+	client := HttpClient(r.Key, r.Cert, r.CAPath, r.Timeout)
 	var req *http.Request
 	if r.Method == "POST" {
 		if len(r.Data) > 0 {
