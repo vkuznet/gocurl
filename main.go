@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"crypto/tls"
+	"crypto/x509"
 	"flag"
 	"fmt"
 	"io"
@@ -40,6 +41,7 @@ type Request struct {
 	Output  string            // output file name
 	Key     string            // x509 key or proxy file name
 	Cert    string            // x509 cert or proxy file name
+	RootCA  string            // root CA file name
 	Timeout int               // http client timeout
 	Verbose int               // verbosity level
 }
@@ -69,6 +71,8 @@ func main() {
 	var cert string
 	flag.StringVar(&cert, "cert", "", "X509 cert file name")
 	flag.StringVar(&cert, "c", "", "alias for -cert option")
+	var rootCA string
+	flag.StringVar(&rootCA, "rootCA", "", "rootCA file name")
 	var fout string
 	flag.StringVar(&fout, "out", "", "output file name")
 	flag.StringVar(&fout, "o", "", "alias for -out option")
@@ -126,6 +130,7 @@ func main() {
 		Forms:   fmap,
 		Key:     key,
 		Cert:    cert,
+		RootCA:  rootCA,
 		Timeout: timeout,
 		Output:  fout,
 		Verbose: verbose,
@@ -193,7 +198,7 @@ func tlsCerts(key, cert string) ([]tls.Certificate, error) {
 }
 
 // HttpClient is HTTP client for urlfetch server
-func HttpClient(key, cert string, tout int) *http.Client {
+func HttpClient(key, cert, rootCA string, tout int) *http.Client {
 	var certs []tls.Certificate
 	var err error
 	// get X509 certs
@@ -208,9 +213,26 @@ func HttpClient(key, cert string, tout int) *http.Client {
 		}
 		return &http.Client{}
 	}
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{Certificates: certs,
-			InsecureSkipVerify: true},
+	var tr *http.Transport
+	if rootCA != "" {
+		caCert, err := ioutil.ReadFile(rootCA)
+		if err != nil {
+			log.Fatal("ERROR ", err)
+		}
+		caCertPool := x509.NewCertPool()
+		caCertPool.AppendCertsFromPEM(caCert)
+		tr = &http.Transport{
+			TLSClientConfig: &tls.Config{
+				Certificates:       certs,
+				RootCAs:            caCertPool,
+				InsecureSkipVerify: true},
+		}
+	} else {
+		tr = &http.Transport{
+			TLSClientConfig: &tls.Config{
+				Certificates:       certs,
+				InsecureSkipVerify: true},
+		}
 	}
 	if tout > 0 {
 		return &http.Client{Transport: tr, Timeout: timeout}
@@ -220,7 +242,7 @@ func HttpClient(key, cert string, tout int) *http.Client {
 
 // func run(rurl, params string, headers, fmap map[string]string, fout string, tout, verbose int) {
 func run(r Request) {
-	client := HttpClient(r.Key, r.Cert, r.Timeout)
+	client := HttpClient(r.Key, r.Cert, r.RootCA, r.Timeout)
 	var req *http.Request
 	if r.Method == "POST" {
 		if len(r.Data) > 0 {
