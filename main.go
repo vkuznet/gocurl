@@ -52,7 +52,7 @@ func main() {
 	flag.StringVar(&data, "data", "", "input data or data file")
 	flag.StringVar(&data, "d", "", "alias for -data option")
 	var header strFlags
-	flag.Var(&header, "header", "HTTP header, e.g. Content-Type:applicatin/json")
+	flag.Var(&header, "header", "HTTP header, e.g. Content-Type:application/json")
 	flag.Var(&header, "h", "alias for -header option")
 	var form strFlags
 	flag.Var(&form, "form", "HTTP form key-value pair, e.g. key=value")
