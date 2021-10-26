@@ -17,13 +17,13 @@ build:
 build_debug:
 	go clean; CGO_ENABLED=0 go build -o gocurl ${flags} -gcflags="-m -m"
 
-build_all: build_darwin build_linux build_power8 build_arm64 build_windows
+build_all: build_darwin build_amd64 build_power8 build_arm64 build_windows
 
 build_darwin:
 	go clean; rm gocurl_darwin; GOOS=darwin CGO_ENABLED=0 go build -o gocurl_darwin ${flags}
 
-build_linux:
-	go clean; rm gocurl_linux; GOOS=linux CGO_ENABLED=0 go build -o gocurl_linux ${flags}
+build_amd64:
+	go clean; rm gocurl_amd64; GOOS=linux CGO_ENABLED=0 go build -o gocurl_amd64 ${flags}
 
 build_power8:
 	go clean; rm gocurl_power8; GOARCH=ppc64le GOOS=linux CGO_ENABLED=0 go build -o gocurl_power8 ${flags}
