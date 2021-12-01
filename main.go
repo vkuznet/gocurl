@@ -228,7 +228,9 @@ func HttpClient(key, cert, caPath string, tout int) *http.Client {
 				log.Printf("Unable to read %s\n", fname)
 			}
 			if ok := rootCAs.AppendCertsFromPEM(caCert); !ok {
-				log.Printf("invalid PEM format while importing trust-chain: %q", fname)
+				if strings.HasSuffix(fname, "pem") {
+					log.Printf("invalid PEM format while importing trust-chain: %q", fname)
+				}
 			}
 		}
 		tr = &http.Transport{
