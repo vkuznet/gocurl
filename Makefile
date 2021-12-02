@@ -1,9 +1,9 @@
-VERSION=`git rev-parse --short HEAD`
+VERSION=`git describe --tags`
 OS := $(shell uname)
 ifeq ($(OS),Darwin)
-flags=-ldflags="-s -w -X main.version=${VERSION}"
+flags=-ldflags="-s -w -X main.gitVersion=${VERSION}"
 else
-flags=-ldflags="-s -w -X main.version=${VERSION} -extldflags -static"
+flags=-ldflags="-s -w -X main.gitVersion=${VERSION} -extldflags -static"
 endif
 
 all: build

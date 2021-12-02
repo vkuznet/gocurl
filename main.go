@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -45,6 +46,16 @@ type Request struct {
 	CAPath  string            // CA path name
 	Timeout int               // http client timeout
 	Verbose int               // verbosity level
+}
+
+// version of the code
+var gitVersion string
+
+// Info function returns version string of the server
+func info() string {
+	goVersion := runtime.Version()
+	tstamp := time.Now().Format("2006-02-01")
+	return fmt.Sprintf("gocurl git=%s go=%s date=%s", gitVersion, goVersion, tstamp)
 }
 
 func main() {
@@ -80,7 +91,15 @@ func main() {
 	var timeout int
 	flag.IntVar(&timeout, "timeout", 0, "HTTP timeout value")
 	flag.IntVar(&timeout, "t", 0, "alias -timeout option")
+	var version bool
+	flag.BoolVar(&version, "version", false, "Show version")
 	flag.Parse()
+	flag.Parse()
+	if version {
+		fmt.Println(info())
+		os.Exit(0)
+
+	}
 
 	// set logger flags
 	log.SetFlags(0)
